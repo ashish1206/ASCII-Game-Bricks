@@ -9,10 +9,13 @@
 #include<time.h>
 #include<string.h>
 #include<chrono>
+#include<thread>
+#include<iostream>
 #define REF_LEN 4
-using namespace std;
 
 void updateReflector();
+void renderGrid();
+void refreshScreen();
 
 struct termios orgTermios;
 struct winsize ws;
@@ -24,7 +27,6 @@ int ballVelX;
 int ballVelY;
 int ballPosX;
 int ballPosY;
-auto ball_last_time = chrono::high_resolution_clock::now();
 
 void error(const char *msg){
     write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -33,7 +35,6 @@ void error(const char *msg){
     exit(1);
 }
 
-//Ternimal
 void disableRawMode(){
     if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &orgTermios) == -1)
         error("tcsetattr error");
@@ -50,13 +51,12 @@ void enableRawMode(){
     rawTermios.c_cflag |= (CS8);
     rawTermios.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
     rawTermios.c_cc[VMIN] = 0;
-    rawTermios.c_cc[VTIME] = 5;
+    rawTermios.c_cc[VTIME] = 1;
     if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &rawTermios) == -1)
         error("tcsetattr error");
     write(STDOUT_FILENO, "\x1b[?25l", 6);
 }
 
-//Key processing
 char readKeyPress(){
     int nread;
     char c;
@@ -94,16 +94,14 @@ void getWindowSize(){
     }
 }
 
-//Grid gen and update
-long long millisSinceBallLastMove(){
-    auto now_time = chrono::high_resolution_clock::now();
-    long long diff_in_millis = chrono::duration_cast<chrono::microseconds>(now_time - ball_last_time).count();
-    return diff_in_millis;
-}
+// long long millisSinceBallLastMove(){
+//     auto now_time = std::chrono::high_resolution_clock::now();
+//     long long diff_in_millis = std::chrono::duration_cast<std::chrono::microseconds>(now_time - ball_last_time).count();
+//     return diff_in_millis;
+// }
 
 void moveBall(){
-    long long milli = millisSinceBallLastMove();
-    if(milli >= 1000){
+    while(true){
         int tempX = ballPosX + ballVelX;
         int tempY = ballPosY + ballVelY;
         if(tempX==0 || tempY==0 || tempX==row-1 || tempY==col-1){
@@ -124,6 +122,13 @@ void moveBall(){
                 tempY = col-1;
             }
         }
+        else if(bricks[tempY][tempX] != ' '){
+            ballVelX = -1*ballVelX;
+            ballVelY = -1*ballVelY;
+            bricks[tempY][tempX] = ' ';
+            tempX = ballPosX;
+            tempY = ballPosY;
+        }
         else if(bricks[tempY][tempX-1] != ' '){
             ballVelX = 1;
             bricks[tempY][tempX-1] = ' ';
@@ -140,18 +145,12 @@ void moveBall(){
             ballVelY = -1;
             bricks[tempY+1][tempX] = ' ';
         }
-        // else if(bricks[tempY][tempX] != ' '){
-        //     ballVelX = -1*ballVelX;
-        //     ballVelY = -1*ballVelY;
-        //     bricks[tempY][tempX] = ' ';
-        //     tempX = ballPosX;
-        //     tempY = ballPosY;
-        // }
         bricks[ballPosY][ballPosX] = ' ';
         ballPosX = tempX;
         ballPosY = tempY;
         bricks[ballPosY][ballPosX] = 'O';
-        ball_last_time = chrono::high_resolution_clock::now();
+        refreshScreen();
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 }
 
@@ -204,14 +203,13 @@ char** generateGrid(){
 }
 
 void renderGrid(){
-    char *render = (char *)malloc(col);
-    memcpy(render, bricks[0], col);
-    int renderLen = col;
-    for(int i=1;i<row;i++){
+    char *render = (char *)malloc(1);
+    int renderLen = 0;
+    for(int i=0;i<row;i++){
         char *temp = (char *)realloc(render, renderLen+col+5);
         memcpy(&temp[renderLen], "\x1b[K", 3);
-        memcpy(&temp[renderLen+3], "\r\n", 2);
-        memcpy(&temp[renderLen+5], bricks[i], col);
+        memcpy(&temp[renderLen+3], bricks[i], col);
+        memcpy(&temp[renderLen+col+3], "\r\n", 2);
         renderLen += col+5;
         render = temp;
     }
@@ -220,7 +218,6 @@ void renderGrid(){
 }
 
 void refreshScreen(){
-    moveBall();
     renderGrid();
     write(STDOUT_FILENO, "\x1b[H", 3);
 }
@@ -229,9 +226,11 @@ int main(){
     enableRawMode();
     getWindowSize();
     bricks = generateGrid();
+    std::thread ballMoveThread(moveBall);
     while(true){
         refreshScreen();
         processKeyPress();
+        std::this_thread::yield();
     }
     return 0;
 }
