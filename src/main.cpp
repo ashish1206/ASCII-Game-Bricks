@@ -11,6 +11,7 @@
 #include<chrono>
 #include<thread>
 #include<iostream>
+#include<mutex>
 #define REF_LEN 4
 
 void updateReflector();
@@ -205,21 +206,24 @@ char** generateGrid(){
 void renderGrid(){
     char *render = (char *)malloc(1);
     int renderLen = 0;
-    for(int i=0;i<row;i++){
-        char *temp = (char *)realloc(render, renderLen+col+5);
-        memcpy(&temp[renderLen], "\x1b[K", 3);
-        memcpy(&temp[renderLen+3], bricks[i], col);
-        memcpy(&temp[renderLen+col+3], "\r\n", 2);
+    for(int i=1;i<row;i++){
+        render = (char *)realloc(render, renderLen+col+5);
+        memcpy(&render[renderLen], "\x1b[K", 3);
+        memcpy(&render[renderLen+3], bricks[i], col);
+        memcpy(&render[renderLen+col+3], "\r\n", 2);
         renderLen += col+5;
-        render = temp;
     }
     write(STDOUT_FILENO, render, renderLen);
     free(render);
 }
 
+std::mutex mtx;
+
 void refreshScreen(){
+    mtx.lock();
     renderGrid();
     write(STDOUT_FILENO, "\x1b[H", 3);
+    mtx.unlock();
 }
 
 int main(){
