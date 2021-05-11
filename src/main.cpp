@@ -72,8 +72,10 @@ void processKeyPress(){
     char ch = readKeyPress();
     switch(ch) {
         case 'q':
+            free(bricks);
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[H", 3);
+            write(STDOUT_FILENO, "\x1b[?25h", 6);
             exit(0);
             break;
         case 'a':
@@ -184,6 +186,7 @@ char** generateGrid(){
             else{
                 bricks[i][j] = brickTypes[(int)(rand()%btsize)];
             }
+            if(j==0)bricks[i][j] = (i%10)+'0';
         }
     }
     for(int i=row/2;i<row;i++){
@@ -206,12 +209,15 @@ char** generateGrid(){
 void renderGrid(){
     char *render = (char *)malloc(1);
     int renderLen = 0;
-    for(int i=1;i<row;i++){
+    for(int i=0;i<row;i++){
         render = (char *)realloc(render, renderLen+col+5);
         memcpy(&render[renderLen], "\x1b[K", 3);
         memcpy(&render[renderLen+3], bricks[i], col);
-        memcpy(&render[renderLen+col+3], "\r\n", 2);
-        renderLen += col+5;
+        if(i<row-1){
+            memcpy(&render[renderLen+col+3], "\r\n", 2);
+            renderLen += 2;
+        }
+        renderLen += col+3;
     }
     write(STDOUT_FILENO, render, renderLen);
     free(render);
