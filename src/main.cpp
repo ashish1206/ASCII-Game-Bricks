@@ -7,16 +7,20 @@
 #include<string>
 #include<sys/ioctl.h>
 #include<time.h>
+#include<string>
 #include<string.h>
 #include<chrono>
 #include<thread>
 #include<iostream>
 #include<mutex>
 #define REF_LEN 4
+#define OUT_MSG "Press q: quit, r: restart"
 
 void updateReflector();
 void renderGrid();
 void refreshScreen();
+char** generateGrid();
+void initGame();
 
 struct termios orgTermios;
 struct winsize ws;
@@ -24,10 +28,13 @@ int row;
 int col;
 char **bricks;
 int refX;
+int refY;
 int ballVelX;
 int ballVelY;
 int ballPosX;
 int ballPosY;
+long long score;
+bool notOut;
 
 void error(const char *msg){
     write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -78,17 +85,43 @@ void processKeyPress(){
             write(STDOUT_FILENO, "\x1b[?25h", 6);
             exit(0);
             break;
-        case 'a':
-            refX--;
-            refX = (refX<0?0:refX);
-            updateReflector();
+        case 'r':
+            if(!notOut){
+                free(bricks);
+                initGame();
+            }
             break;
+        case 'a':
+            if(notOut){
+                refX--;
+                refX = (refX<0?0:refX);
+                updateReflector();
+                break;
+            }
         case 'd':
-            refX++;
-            refX = (refX+REF_LEN>col?col-REF_LEN:refX);
-            updateReflector();
+            if(notOut){
+                refX++;
+                refX = (refX+REF_LEN>=col?col-1-REF_LEN:refX);
+                updateReflector();
+                break;
+            }
+        default:
+            processKeyPress();
             break;
     }
+}
+
+void printMsg(std::string msg){
+    std::string outMsg[] = {"Ouch! ", "Howzat! ", "Mind the line! ", "Focus! ", "B.L.N.T.! ", "Fragile! "};
+    int outMsgLen = 6;
+    srand(time(0));
+    std::string str = outMsg[(int)rand()%outMsgLen] + msg;
+    strcpy(&bricks[row-1][13], str.c_str());
+}
+
+void updateScore(){
+    std::string scoreStr =  "Score: " + std::to_string(score);
+    strcpy(bricks[row-1], scoreStr.c_str());
 }
 
 void getWindowSize(){
@@ -97,17 +130,12 @@ void getWindowSize(){
     }
 }
 
-// long long millisSinceBallLastMove(){
-//     auto now_time = std::chrono::high_resolution_clock::now();
-//     long long diff_in_millis = std::chrono::duration_cast<std::chrono::microseconds>(now_time - ball_last_time).count();
-//     return diff_in_millis;
-// }
-
 void moveBall(){
     while(true){
+        bool moveReq = true;
         int tempX = ballPosX + ballVelX;
         int tempY = ballPosY + ballVelY;
-        if(tempX==0 || tempY==0 || tempX==row-1 || tempY==col-1){
+        if(tempX==0 || tempY==0 || tempX==col-1 || tempY==row-2){
             if(tempX == 0){
                 ballVelX = 1;
                 tempX = 0;
@@ -116,13 +144,26 @@ void moveBall(){
                 ballVelY = 1;
                 tempY = 0;
             }
-            if(tempX == row-1){
-                ballVelX = -1;
-                tempX = row-1;
+            if(tempY == row-2){
+                if(tempX>=refX && tempX<=refX+REF_LEN){
+                    ballVelY = -1;
+                    moveReq = false;
+                }
+                else{
+                    bricks[ballPosY][ballPosX] = ' ';
+                    ballPosX = tempX;
+                    ballPosY = tempY;
+                    bricks[ballPosY][ballPosX] = 'O';
+                    notOut = false;
+                    printMsg(OUT_MSG);
+                    refreshScreen();
+                    processKeyPress();
+                    continue;
+                }
             }
-            if(tempY == col){
-                ballVelY = -1;
-                tempY = col-1;
+            if(tempX == col-1){
+                ballVelX = -1;
+                tempX = col-1;
             }
         }
         else if(bricks[tempY][tempX] != ' '){
@@ -144,26 +185,30 @@ void moveBall(){
             ballVelX = -1;
             bricks[tempY][tempX+1] = ' ';
         }
-        else if(bricks[tempY+1][tempX] != ' '){
+        else if(bricks[tempY+1][tempX] != ' ' && bricks[tempY+1][tempX] != '_'){
             ballVelY = -1;
+            if(tempY+1 != row-2)
             bricks[tempY+1][tempX] = ' ';
         }
-        bricks[ballPosY][ballPosX] = ' ';
-        ballPosX = tempX;
-        ballPosY = tempY;
-        bricks[ballPosY][ballPosX] = 'O';
+        if(moveReq){
+            bricks[ballPosY][ballPosX] = ' ';
+            ballPosX = tempX;
+            ballPosY = tempY;
+            bricks[ballPosY][ballPosX] = 'O';
+        }
+        score++;
         refreshScreen();
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
     }
 }
 
 void updateReflector(){
     for(int i=0;i<col;i++){
         if(i>=refX && i<=refX+REF_LEN){
-            bricks[row-1][i] = '=';
+            bricks[refY][i] = '=';
         }
         else{
-            bricks[row-1][i] = ' ';
+            bricks[refY][i] = '_';
         }
     }
 }
@@ -171,9 +216,6 @@ void updateReflector(){
 char** generateGrid(){
     char brickTypes[] = {'*','@','#','$','%','&', ' '};
     int btsize = 6;
-    row = ws.ws_row;
-    col = ws.ws_col;
-    refX = col/2-2;
     char **bricks = new char*[row];
     srand(time(0));
     for(int i=0;i<row/2;i++){
@@ -186,7 +228,6 @@ char** generateGrid(){
             else{
                 bricks[i][j] = brickTypes[(int)(rand()%btsize)];
             }
-            if(j==0)bricks[i][j] = (i%10)+'0';
         }
     }
     for(int i=row/2;i<row;i++){
@@ -195,13 +236,14 @@ char** generateGrid(){
             bricks[i][j] = ' ';
         }
     }
-    for(int i=refX;i<=refX + REF_LEN;i++){
-        bricks[row-1][i] = '=';
+    for(int i=0;i<=col;i++){
+        if(i>=refX && i<=refX + REF_LEN){
+            bricks[refY][i] = '=';
+        }
+        else{
+            bricks[refY][i] = '_';
+        }
     }
-    ballVelX = -1;
-    ballVelY = -1;
-    ballPosY = row-2;
-    ballPosX = refX+2;
     bricks[ballPosY][ballPosX] = 'O';
     return bricks;
 }
@@ -227,17 +269,33 @@ std::mutex mtx;
 
 void refreshScreen(){
     mtx.lock();
+    updateScore();
     renderGrid();
     write(STDOUT_FILENO, "\x1b[H", 3);
     mtx.unlock();
 }
 
+void initGame(){
+    getWindowSize();
+    notOut = true;
+    score = 0;
+    row = ws.ws_row;
+    col = ws.ws_col;
+    refX = col/2-2;
+    refY = row-2;
+    ballVelX = -1;
+    ballVelY = -1;
+    ballPosY = refY-1;
+    ballPosX = refX+2;
+    bricks = generateGrid();
+}
+
 int main(){
     enableRawMode();
-    getWindowSize();
-    bricks = generateGrid();
+    initGame();
     std::thread ballMoveThread(moveBall);
     while(true){
+        updateScore();
         refreshScreen();
         processKeyPress();
         std::this_thread::yield();
