@@ -15,6 +15,7 @@
 #include<mutex>
 #define REF_LEN 4
 #define OUT_MSG "Press q: quit, r: restart"
+#define WIN_MSG "You Won, Press q: quit, r: restart"
 
 void updateReflector();
 void renderGrid();
@@ -35,6 +36,7 @@ int ballPosX;
 int ballPosY;
 long long score;
 bool notOut;
+int totalBricks;
 
 void error(const char *msg){
     write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -111,11 +113,11 @@ void processKeyPress(){
     }
 }
 
-void printMsg(std::string msg){
+void printOutWinMsg(std::string msg){
     std::string outMsg[] = {"Ouch! ", "Howzat! ", "Mind the line! ", "Focus! ", "B.L.N.T.! ", "Fragile! "};
     int outMsgLen = 6;
     srand(time(0));
-    std::string str = outMsg[(int)rand()%outMsgLen] + msg;
+    std::string str = (totalBricks>0?outMsg[(int)rand()%outMsgLen]:"") + msg;
     strcpy(&bricks[row-1][13], str.c_str());
 }
 
@@ -155,7 +157,7 @@ void moveBall(){
                     ballPosY = tempY;
                     bricks[ballPosY][ballPosX] = 'O';
                     notOut = false;
-                    printMsg(OUT_MSG);
+                    printOutWinMsg(OUT_MSG);
                     refreshScreen();
                     processKeyPress();
                     continue;
@@ -172,29 +174,42 @@ void moveBall(){
             bricks[tempY][tempX] = ' ';
             tempX = ballPosX;
             tempY = ballPosY;
+            totalBricks--;
         }
         else if(bricks[tempY][tempX-1] != ' '){
             ballVelX = 1;
             bricks[tempY][tempX-1] = ' ';
+            totalBricks--;
         }
         else if(bricks[tempY-1][tempX] != ' '){
             ballVelY = 1;
             bricks[tempY-1][tempX] = ' ';
+            totalBricks--;
         }
         else if(bricks[tempY][tempX+1] != ' '){
             ballVelX = -1;
             bricks[tempY][tempX+1] = ' ';
+            totalBricks--;
         }
         else if(bricks[tempY+1][tempX] != ' ' && bricks[tempY+1][tempX] != '_'){
             ballVelY = -1;
-            if(tempY+1 != row-2)
-            bricks[tempY+1][tempX] = ' ';
+            if(tempY+1 != row-2){
+                bricks[tempY+1][tempX] = ' ';
+                totalBricks--;
+            }
         }
         if(moveReq){
             bricks[ballPosY][ballPosX] = ' ';
             ballPosX = tempX;
             ballPosY = tempY;
             bricks[ballPosY][ballPosX] = 'O';
+        }
+        if(totalBricks == 0){
+            notOut = false;
+            printOutWinMsg(WIN_MSG);
+            refreshScreen();
+            processKeyPress();
+            continue;
         }
         score++;
         refreshScreen();
@@ -227,6 +242,7 @@ char** generateGrid(){
             }
             else{
                 bricks[i][j] = brickTypes[(int)(rand()%btsize)];
+                totalBricks += (bricks[i][j]==' '?0:1);
             }
         }
     }
@@ -287,6 +303,7 @@ void initGame(){
     ballVelY = -1;
     ballPosY = refY-1;
     ballPosX = refX+2;
+    totalBricks = 0;
     bricks = generateGrid();
 }
 
